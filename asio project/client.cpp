@@ -5,12 +5,21 @@
 #include <string>
 #include <thread>
 #include "queue.h" 
+#include <boost/property_tree/ptree.hpp>
+#include <boost/property_tree/json_parser.hpp>
+#include "tokenMap.hpp"
 
 using namespace boost::asio;
 using tcp = boost::asio::ip::tcp;
 
 extern volatile bool shouldStop;
 extern ThreadSafeQueue<std::string> messageQueue;
+
+extern ThreadSafeMap<std::string> messageMap;
+
+
+boost::property_tree::ptree parseJson(const std::string& jsonStr);
+
 
 int client(const char* ip_address, const char* port) {
 
@@ -40,7 +49,18 @@ int client(const char* ip_address, const char* port) {
             try {
                 ws.read(buffer);
                 auto received_message = boost::beast::buffers_to_string(buffer.cdata());
-                messageQueue.enqueue(received_message);
+
+
+                if (!received_message.empty()) {
+                    boost::property_tree::ptree pt = parseJson(received_message);
+                    int token_id = pt.get<int>("token");
+
+                    messageMap.update(token_id, received_message);
+
+                    messageQueue.enqueue(received_message);
+
+                }
+
             }
             catch (const boost::beast::system_error& e) {
 
@@ -54,7 +74,7 @@ int client(const char* ip_address, const char* port) {
 
     }
     catch (const std::exception& e) {
-        std::cerr << "Exception: " << e.what() << std::endl;
+        std::cerr << "Exception client: " << e.what() << std::endl;
     }
 
     return 0;

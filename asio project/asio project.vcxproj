@@ -137,6 +137,7 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClCompile Include="asyncServer.cpp" />
     <ClCompile Include="client.cpp" />
     <ClCompile Include="main.cpp" />
     <ClCompile Include="queue.cpp" />
@@ -145,6 +146,7 @@
   <ItemGroup>
     <ClInclude Include="all.h" />
     <ClInclude Include="queue.h" />
+    <ClInclude Include="tokenMap.hpp" />
   </ItemGroup>
   <ItemGroup>
     <None Include="info.json" />
