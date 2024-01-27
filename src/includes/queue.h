@@ -8,6 +8,7 @@ template <typename T>
 class ThreadSafeQueue {
 public:
     void enqueue(const T& value);
+    int size();
     T dequeue();
 
 private:

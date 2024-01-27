@@ -5,6 +5,8 @@
 #include <boost/property_tree/json_parser.hpp>
 #include "../includes/queue.h"
 #include "../includes/tokenMap.hpp"
+#include <typeinfo>
+#include "../includes/utils.h"
 
 
 boost::property_tree::ptree readJsonFromFile(const std::string& filename) {
@@ -28,26 +30,29 @@ ThreadSafeMap<std::string> messageMap;
 
 int client(const char* ip_address, const char* port);
 int server(const char* ip_address, const char* port);
-int asyncServer(const char* ip_address, const char* PORT);
+int asyncServer(const char* ip_address, int port);
 
 
 int main() {
     boost::property_tree::ptree pt = readJsonFromFile("info.json");
 
     std::string serverIp = pt.get<std::string>("server.ip");
-    std::string serverPort = pt.get<std::string>("server.port");
+    int serverPort = pt.get<int>("server.port");
     std::string clientIp = pt.get<std::string>("client.ip");
     std::string clientPort = pt.get<std::string>("client.port");
 
+    std::cout << "Type of : " << typeid(serverPort).name() << std::endl;
+
     // Convert string const char* for function calls
     const char* serverIpCStr = serverIp.c_str();
-    const char* serverPortCStr = serverPort.c_str();
     const char* clientIpCStr = clientIp.c_str();
     const char* clientPortCStr = clientPort.c_str();
 
+    // int serverPortCStr = convertToNumber<int>(serverPort);
+
     std::thread clientThread(client, clientIpCStr, clientPortCStr);
-    //std::thread serverThread(asyncServer, serverIpCStr, serverPortCStr);
-    std::thread serverThread(server, serverIpCStr, serverPortCStr);
+    std::thread serverThread(asyncServer, serverIpCStr ,serverPort);
+    // std::thread serverThread(server, serverIpCStr, serverPortCStr);
 
     // Wait for both threads to finish
     clientThread.join();

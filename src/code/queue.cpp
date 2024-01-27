@@ -10,6 +10,11 @@ void ThreadSafeQueue<T>::enqueue(const T& value) {
 }
 
 template <typename T>
+int ThreadSafeQueue<T>::size(){
+    return queue_.size();
+}
+
+template <typename T>
 T ThreadSafeQueue<T>::dequeue() {
     std::unique_lock<std::mutex> lock(mutex_);
     condition_.wait(lock, [this] { return !queue_.empty(); });

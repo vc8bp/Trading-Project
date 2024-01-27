@@ -1,16 +1,14 @@
-#define BOOST_BIND_GLOBAL_PLACEHOLDERS
-
 #include <iostream>
 #include <boost/asio.hpp>
 #include <boost/beast/core.hpp>
 #include <boost/beast/websocket.hpp>
 #include <thread>
 //#include "queue.h"
+#include "../includes/tokenMap.hpp"
+#include "../includes/queue.h"
 #include <unordered_map>
 #include <unordered_set>
 #include <chrono>
-#include "../includes/tokenMap.hpp"
-#include "../includes/queue.h"
 #include <boost/property_tree/ptree.hpp>
 #include <boost/property_tree/json_parser.hpp>
 #include <mutex>
@@ -26,7 +24,10 @@ extern ThreadSafeQueue<std::string> messageQueue;
 extern ThreadSafeMap<std::string> messageMap;
 
 
-std::vector<boost::beast::websocket::stream<tcp::socket>> clients;
+//std::vector<boost::beast::websocket::stream<tcp::socket>> clients;
+std::vector<std::unique_ptr<boost::beast::websocket::stream<tcp::socket>>> clients;
+std::mutex clietnsMutex;
+std::condition_variable clientsCV;
 
 std::unordered_set<int> uniqueTokens;
 std::mutex uniqueTokensMutex;
@@ -34,74 +35,80 @@ std::condition_variable uniqueTokensCV;
 
 boost::property_tree::ptree parseJson(const std::string& jsonStr);
 
-
-
 void readMessagesThread() {
-    while (!shouldStop) {
+    while (true) {
+        if (clients.empty()) continue;
+
+        int i = 0;
         try {
-            // Read messages from clients and push them to the queue
-            for (size_t i = 0; i < clients.size(); ++i) {
+            for (i = 0; i < clients.size(); ++i) {
                 boost::beast::flat_buffer buffer;
-                clients[i].read(buffer);
-                auto received_message = boost::beast::buffers_to_string(buffer.cdata());
 
-                //int token = std::stoi(received_message);
+                boost::system::error_code ec;
+                clients[i]->read(buffer, ec);
 
-                //std::cout << token << std::endl;
+                if (ec) {
+                    std::lock_guard<std::mutex> guard(clietnsMutex);
+                    if (clients.size() > i) {
+                        std::cerr << "Client Removed from ARRAY" << std::endl;
+                        clients.erase(clients.begin() + i);
+                        --i;
+                    }
+                    if (ec == boost::asio::error::eof || ec == boost::asio::error::connection_reset) {
+                        std::cerr << "Client " << i << " disconnected during write: " << ec.message() << std::endl;
 
-                //{
-                //    std::lock_guard<std::mutex> lock(uniqueTokensMutex);
-                //    uniqueTokens.insert(token);
-                //}
+
+                    } else {
+                        std::cerr << "Boost.Asio write error: " << ec.message() << std::endl;
+                    }
+                } else {
+                    auto received_message = boost::beast::buffers_to_string(buffer.cdata());
+                    std::cout << received_message << std::endl;
+                }
+
+
             }
         }
-        catch (const boost::beast::system_error& e) {
-            if (e.code() != boost::beast::websocket::error::closed) {
-                std::cout << e.code().message() << std::endl;
-            }
-            std::cout << "Client Disconnected!!" << std::endl;
-            break;
-        }
-        catch (const std::exception& e) {
-            std::cerr << "Exception server: " << e.what() << std::endl;
-            std::cout << "Client Disconnected!!" << std::endl;
-            break;
+        catch (const std::exception& ex) {
+            std::cerr << "Caught unknown exception: " << ex.what() << " at client " << i << std::endl;
         }
     }
 }
 
 void broadCastFeed() {
-    while (!shouldStop) {
+    while (true) {
+        std::string message = messageQueue.dequeue();
+        std::cout<< "DEQUEUED" << std::endl;
+        if (clients.empty()) continue;
+
+        std::lock_guard<std::mutex> guard(clietnsMutex);
+
+        int i = 0;
         try {
-            std::string message = messageQueue.dequeue();
-            for (auto& client : clients) {
-                client.write(boost::asio::buffer(message));
-                //boost::property_tree::ptree pt = parseJson(message);
-                //int token_id = pt.get<int>("token");
+            for (i = 0; i < clients.size(); i++) {
+                std::cout<< "Sending to client : " << i << std::endl;
+                
+                boost::system::error_code ec;
+                clients[i]->write(boost::asio::buffer(message), ec);
 
-                //{
-                //    std::unique_lock<std::mutex> lock(uniqueTokensMutex);
-                //    if (uniqueTokens.find(token_id) != uniqueTokens.end()) {
-                //        client.write(boost::asio::buffer(message));
-                //    }
-                //}
-
+                if (ec) {
+                    std::lock_guard<std::mutex> guard(clietnsMutex);
+                    if (clients.size() > i) {
+                        std::cerr << "Client Removed from ARRAY" << std::endl;
+                        clients.erase(clients.begin() + i);
+                        --i;
+                    }
+                    if (ec == boost::asio::error::eof || ec == boost::asio::error::connection_reset) {
+                        std::cerr << "Client " << i << " disconnected during write: " << ec.message() << std::endl;
+                    } else {
+                        std::cerr << "Boost.Asio write error: " << ec.message() << std::endl;
+                    }
+                }
             }
-
         }
-        catch (const boost::beast::system_error& e) {
-            if (e.code() != boost::beast::websocket::error::closed) {
-                std::cout << e.code().message() << std::endl;
-            }
-            std::cout << "Client Disconnected!!" << std::endl;
-            break;
+        catch (const std::exception& ex) {
+            std::cerr << "Caught unknown exception: " << ex.what() << " at client " << i << std::endl;
         }
-        catch (const std::exception& e) {
-            std::cerr << "Exception server: " << e.what() << std::endl;
-            std::cout << "Client Disconnected!!" << std::endl;
-            break;
-        }
-
     }
 }
 
@@ -131,19 +138,19 @@ int server(const char* ip_address, const char* PORT) {
             boost::beast::websocket::stream<tcp::socket> ws {std::move(q)};
 
             ws.accept();
-            clients.push_back(std::move(ws));
 
-            for (const auto& token : uniqueTokens) {
-                std::string received_message = messageMap.get(token);
-                ws.write(boost::asio::buffer(received_message));
-            }
+            std::string received_message = messageMap.printAll();
+            ws.write(boost::asio::buffer(received_message));
 
-            while (true) {
-                
-            }
+            std::lock_guard<std::mutex> guard(clietnsMutex);
+            clients.push_back(std::make_unique<boost::beast::websocket::stream<tcp::socket>>(std::move(ws)));
+
         } }.detach();
 
     }
+
+    readThread.join();
+    broadCastThread.join();
 
     return 0;
 }
