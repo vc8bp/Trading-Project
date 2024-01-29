@@ -58,7 +58,7 @@ int client(const char* ip_address, const char* port) {
 
                     messageMap.update(token_id, received_message);
 
-                    messageQueue.enqueue(received_message);
+                    // messageQueue.enqueue(received_message);
 
                 }
 

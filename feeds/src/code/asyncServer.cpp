@@ -15,33 +15,40 @@
 
 extern volatile bool shouldStop;
 extern ThreadSafeQueue<std::string> messageQueue;
+extern ThreadSafeMap<std::string> messageMap;
 
 boost::property_tree::ptree parseJson(const std::string& jsonStr);
 
-int extractToken(const std::string& jsonString) {
-    // Find the position of "token" in the JSON string
-    size_t tokenPos = jsonString.find("\"token\"");
+auto getToken() {
+    size_t alreadyColonIndex = std::string::npos;
 
-    if (tokenPos != std::string::npos) {
-        // Find the position of the colon after "token"
-        size_t colonPos = jsonString.find(":", tokenPos);
+    return [alreadyColonIndex](const std::string& jsonString) mutable{
 
-        if (colonPos != std::string::npos) {
-            // Find the position of the comma after the "token" value
-            size_t commaPos = jsonString.find(",", colonPos);
-
+        if(alreadyColonIndex == std::string::npos){
+            size_t tokenPos = jsonString.find("\"token\"");    
+            if (tokenPos != std::string::npos) {
+            size_t colonPos = jsonString.find(":", tokenPos);
+                alreadyColonIndex = colonPos;
+                if (colonPos != std::string::npos) {
+                    size_t commaPos = jsonString.find(",", colonPos);
+                    if (commaPos != std::string::npos) {
+                        std::string tokenStr = jsonString.substr(colonPos + 1, commaPos - colonPos - 1);
+                        return std::stoi(tokenStr);
+                    }
+                }
+            }
+        } else {
+            size_t commaPos = jsonString.find(",", alreadyColonIndex);
             if (commaPos != std::string::npos) {
-                // Extract the "token" value substring and convert it to an integer
-                std::string tokenStr = jsonString.substr(colonPos + 1, commaPos - colonPos - 1);
+                std::string tokenStr = jsonString.substr(alreadyColonIndex + 1, commaPos - alreadyColonIndex - 1);
                 return std::stoi(tokenStr);
             }
+            
         }
-    }
 
-    // Return -1 if the "token" field is not found
-    return -1;
+        return -1;
+    };
 }
-
 
 namespace beast = boost::beast;
 namespace http  = beast::http;
@@ -128,9 +135,11 @@ websocket::stream<beast::tcp_stream>& MyWebsocket::getWebSocket() {
 
 void Listener::broadcastMessage() {
     std::thread([this]() {
+        auto getTokenInsance = getToken();
         while (true) {
-            std::cout << messageQueue.size() <<std::endl;
-            std::string message = messageQueue.dequeue();
+            // std::cout << messageQueue.size() <<std::endl;
+            // std::string message = messageQueue.dequeue();
+            std::string message = messageMap.getBatchedFeed();
 
             if (!clients.size()) continue;
 
@@ -139,9 +148,8 @@ void Listener::broadcastMessage() {
             this->pendingWrites = clients.size(); 
             ul.unlock(); 
 
-            int token_id = extractToken(message);
-            // boost::property_tree::ptree pt = parseJson(message);
-            // int token_id = pt.get<int>("token");
+            // int token_id = getTokenInsance(message);
+
 
             for (auto& client : clients) {
                 // if(client->isSubscribed(token_id)){

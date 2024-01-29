@@ -6,6 +6,9 @@ template <typename T>
 void ThreadSafeQueue<T>::enqueue(const T& value) {
     std::lock_guard<std::mutex> lock(mutex_);
     queue_.push(value);
+    if(queue_.size() > 100){
+        queue_.pop();
+    }
     condition_.notify_one();
 }
 
