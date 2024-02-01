@@ -41,7 +41,6 @@ class Listener : public std::enable_shared_from_this<Listener> {
     net::io_context& ioc;
     tcp::acceptor acceptor;
     std::vector<std::shared_ptr<MyWebsocket>> clients;
-    std::vector<std::thread> broadcastThreads;
 
 public:
     std::mutex mutex;
@@ -52,6 +51,4 @@ public:
     void asyncAccept();
     void addClient(std::shared_ptr<MyWebsocket> client);
     void removeClient(std::shared_ptr<MyWebsocket> client);
-    void broadcastMessage();
-    void stopMessageBroadcast();
 };

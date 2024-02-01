@@ -6,7 +6,7 @@ TARGET = sampleStrat
 
 all: $(LIBRARY) $(TARGET)
 
-$(LIBRARY): messageGetter.cpp
+$(LIBRARY):feedGetter.cpp
 	$(CC) $(CFLAGS) -fPIC -shared $^ -o $@
 
 $(TARGET): sampleStrat.cpp $(LIBRARY)

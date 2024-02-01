@@ -3,8 +3,6 @@
 #include <thread>
 #include <boost/property_tree/ptree.hpp>
 #include <boost/property_tree/json_parser.hpp>
-#include "../includes/queue.h"
-#include "../includes/tokenMap.hpp"
 #include <typeinfo>
 #include "../includes/utils.h"
 
@@ -24,12 +22,9 @@ boost::property_tree::ptree parseJson(const std::string& jsonStr) {
 
 
 volatile bool shouldStop = false;
-ThreadSafeQueue<std::string> messageQueue;
 
-ThreadSafeMap<std::string> messageMap;
 
 int client(const char* ip_address, const char* port);
-int server(const char* ip_address, const char* port);
 int asyncServer(const char* ip_address, int port);
 
 
@@ -50,12 +45,11 @@ int main() {
 
 
     std::thread clientThread(client, clientIpCStr, clientPortCStr);
-    std::thread serverThread(asyncServer, serverIpCStr ,serverPort);
+    // std::thread serverThread(asyncServer, serverIpCStr ,serverPort);
     // std::thread serverThread(server, serverIpCStr, serverPortCStr);
 
     // Wait for both threads to finish
     clientThread.join();
-    serverThread.join();
 
     return 0;
 }

@@ -9,54 +9,17 @@
 #include <boost/property_tree/ptree.hpp>
 #include <boost/property_tree/json_parser.hpp>
 
-#include "../includes/tokenMap.hpp"
-#include "../includes/queue.h"
 #include "../includes/asyncServer.h"
 
 extern volatile bool shouldStop;
-extern ThreadSafeQueue<std::string> messageQueue;
-extern ThreadSafeMap<std::string> messageMap;
 
 boost::property_tree::ptree parseJson(const std::string& jsonStr);
-
-auto getToken() {
-    size_t alreadyColonIndex = std::string::npos;
-
-    return [alreadyColonIndex](const std::string& jsonString) mutable{
-
-        if(alreadyColonIndex == std::string::npos){
-            size_t tokenPos = jsonString.find("\"token\"");    
-            if (tokenPos != std::string::npos) {
-            size_t colonPos = jsonString.find(":", tokenPos);
-                alreadyColonIndex = colonPos;
-                if (colonPos != std::string::npos) {
-                    size_t commaPos = jsonString.find(",", colonPos);
-                    if (commaPos != std::string::npos) {
-                        std::string tokenStr = jsonString.substr(colonPos + 1, commaPos - colonPos - 1);
-                        return std::stoi(tokenStr);
-                    }
-                }
-            }
-        } else {
-            size_t commaPos = jsonString.find(",", alreadyColonIndex);
-            if (commaPos != std::string::npos) {
-                std::string tokenStr = jsonString.substr(alreadyColonIndex + 1, commaPos - alreadyColonIndex - 1);
-                return std::stoi(tokenStr);
-            }
-            
-        }
-
-        return -1;
-    };
-}
 
 namespace beast = boost::beast;
 namespace http  = beast::http;
 namespace websocket = beast::websocket;
 namespace net = boost::asio;
 using tcp = boost::asio::ip::tcp;
-
-
 
 MyWebsocket::MyWebsocket(tcp::socket&& socket, std::shared_ptr<Listener> listener) :
     ws(std::move(socket)),
@@ -95,7 +58,6 @@ void MyWebsocket::echo() {
             std::cout << "Error: " << e.what() << std::endl;
         }
 
-        // self->listener->broadcastMessage(out);
         self->buffer.consume(self->buffer.size());
         self->echo();
     });
@@ -133,103 +95,7 @@ websocket::stream<beast::tcp_stream>& MyWebsocket::getWebSocket() {
     return ws;
 }
 
-void Listener::broadcastMessage() {
-    std::thread([this]() {
-        auto getTokenInsance = getToken();
-        while (true) {
-            // std::cout << messageQueue.size() <<std::endl;
-            // std::string message = messageQueue.dequeue();
-            std::string message = messageMap.getBatchedFeed();
 
-            if (!clients.size()) continue;
-
-            std::unique_lock<std::mutex> ul(mutex);
-
-            this->pendingWrites = clients.size(); 
-            ul.unlock(); 
-
-            // int token_id = getTokenInsance(message);
-
-
-            for (auto& client : clients) {
-                // if(client->isSubscribed(token_id)){
-                if(true){    
-                    client->getWebSocket().async_write(net::buffer(message), [self{shared_from_this()}, client](beast::error_code ec, std::size_t) {
-                        std::lock_guard<std::mutex> lg(self->mutex);
-                        self->pendingWrites -= 1;
-
-                        if (ec == websocket::error::closed) {
-                            self->removeClient(client);
-                        }
-                        if (self->pendingWrites == 0) {
-                            self->condition.notify_one();
-                        }
-                    });
-                } else {
-                    std::lock_guard<std::mutex> lg(this->mutex);
-                    this->pendingWrites -= 1;
-
-                    if (this->pendingWrites == 0) {
-                        this->condition.notify_one();
-                    }
-                }
-
-            }
-
-            ul.lock();
-            condition.wait(ul, [this] { return this->pendingWrites == 0; });
-        }
-    }).detach();
-}
-
-
-
-// void Listener::broadcastMessage() {
-//     int threads = std::thread::hardware_concurrency();
-//     for (int i = 0; i < threads; ++i) {
-//         broadcastThreads.emplace_back([this]() {
-//             while (true) {
-//                 std::cout << messageQueue.size() <<std::endl;    
-//                 std::string message = messageQueue.dequeue();
-
-//                 if (!clients.size()) continue;
-
-//                 std::unique_lock<std::mutex> ul(mutex);
-
-//                 this->pendingWrites = clients.size(); 
-//                 ul.unlock(); 
-
-//                 boost::property_tree::ptree pt = parseJson(message);
-//                 int token_id = pt.get<int>("token");
-//                 for (auto& client : clients) {           
-//                     if (client->isSubscribed(token_id)) {
-//                         client->getWebSocket().async_write(net::buffer(message), [self{shared_from_this()}, client](beast::error_code ec, std::size_t) {
-//                             std::lock_guard<std::mutex> lg(self->mutex);
-//                             self->pendingWrites -= 1;
-                            
-//                             if (ec == websocket::error::closed) {
-//                                 self->removeClient(client);
-//                             }
-//                             if (self->pendingWrites == 0) {
-//                                 self->condition.notify_one();
-//                             }
-//                         });
-//                     }
-//                 }
-//                 ul.lock();
-//                 condition.wait(ul, [this] { return this->pendingWrites == 0; });
-//             }
-//         }).detach();
-//     }
-// }
-
-
-void Listener::stopMessageBroadcast() {
-    for (auto& thread : broadcastThreads) {
-        thread.join();
-    }
-    broadcastThreads.clear();
-}
 
 int asyncServer(const char* ip_address, int port){
     std::cout<< "Running : " << std::endl;
@@ -240,7 +106,6 @@ int asyncServer(const char* ip_address, int port){
     std::cout << "Server is Listening on : " << ip_address << ":" << port << std::endl;
 
     listener->asyncAccept();
-    listener->broadcastMessage();
 
     std::vector<std::thread> v;
     v.reserve(threads-1);
@@ -250,8 +115,6 @@ int asyncServer(const char* ip_address, int port){
         v.emplace_back([&ioc](){ioc.run();});
     }   
     ioc.run();
-
-    listener->stopMessageBroadcast();
 
     return 0;
 }
