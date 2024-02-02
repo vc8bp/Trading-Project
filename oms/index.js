@@ -1,35 +1,33 @@
 import axios from 'axios'
 import env from "dotenv"
+import fs from "fs"
 env.config();
 
 const apiUrl = 'https://Openapi.5paisa.com/VendorsAPI/Service1.svc/TOTPLogin';
 
-
-const redirectToOauthLogin = (requestToken) => {
-    const vendorKey = 'YOUR_VENDOR_KEY';
-    const redirectURL = 'YOUR_REDIRECT_URL';
-    const state = 'YOUR_STATE_VALUE'; 
-
-    const oauthLoginURL = `https://dev-openapi.5paisa.com/WebVendorLogin/VLogin/Index?VendorKey=${vendorKey}&ResponseURL=${redirectURL}&State=${state}&RequestToken=${requestToken}`;
-
-    console.log(`Please open the following URL in your browser to complete OAuth login:\n${oauthLoginURL}`);
-};
-
-
-
 const fetchAccessToken = async (requestToken) => {
+    console.log("Fetching access token")
     const accessTokenUrl = 'https://Openapi.5paisa.com/VendorsAPI/Service1.svc/GetAccessToken';
 
     const accessTokenRequest = {
-        key: process.env.UserKey, 
-        RequestToken: requestToken,
+        head: {
+            Key: process.env.UserKey
+        },
+        body: {
+            RequestToken: requestToken,
+            EncryKey: process.env.EncryptionKey,
+            UserId: process.env.UserID
+        }
+
     };
+
+    console.log(accessTokenRequest)
 
     try {
         const accessTokenResponse = await axios.post(accessTokenUrl, accessTokenRequest);
-
-        console.log('Access Token:', accessTokenResponse.data);
+        fs.writeFileSync('test.json', JSON.stringify(accessTokenResponse.data.body));
     } catch (error) {
+        console.log(error)
         console.error('Error fetching access token:', error.message);
     }
 };
@@ -62,12 +60,12 @@ const sendRequest = async () => {
 
     try {
         const response = await axios.post(apiUrl, requestData);
+        const requestToken = response.data.body.RequestToken;
 
-        fetchAccessToken(response.data.RequestToken)
+        await fetchAccessToken(requestToken);
 
-        console.log(response.data);
     } catch (error) {
-        console.error('Error:', error.message);
+        console.log(error);
     }
 };
 
